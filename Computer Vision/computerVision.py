@@ -1,102 +1,130 @@
+import math
 import time
-from selenium.webdriver import Chrome
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException#
-from webdriver_manager.chrome import ChromeDriverManager
+from random import random
+import cv2
+from keras.models import load_model
+import numpy as np
+model = load_model('/home/ejay/Documents/AIS/AiCore/Computer-Vision-Rock-Paper-Scissors/keras_model.h5')
+cap = cv2.VideoCapture(0)
+data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+showArr = [0]*30
+playerScore = 0
+compScore = 0
+gameOn = True
 
-class Scraper:
-    def __init__(self, url: str = 'https://www.zoopla.co.uk'):
-        self.driver = Chrome(ChromeDriverManager().install())
-        self.driver.get(url)
+# Print the current score and determine comp selection.
+def initialise(playerScore, compScore):
+    print('Player score = {}'.format(playerScore))
+    print('Computer score = {}'.format(compScore))
+    # Select R, P or S for the comp.
+    tempComputerSelection = int(math.ceil(3 * random()))
+    if tempComputerSelection == 1:
+        computerSelection = 'Rock'
+    elif tempComputerSelection == 2:
+        computerSelection = 'Paper'
+    elif tempComputerSelection == 3:
+        computerSelection = 'Scissors'
+    else:
+        print('Error Line 20')
+    return tempComputerSelection, computerSelection
 
-    def acceptCookies(self, xpath: str = '//button[@id="save"]'):
-        try:
-            time.sleep(2)
-            search_bar = self.driver.switch_to.frame('gdpr-consent-notice')
-            WebDriverWait(self.driver,10).until(EC.presence_of_element_located((By.XPATH, xpath)))# -> does not work => search_bar.click()#
-            self.driver.find_element(By.XPATH, xpath).click()
-        except TimeoutException:
-            print('No cookies found')
+# Inform the user that the comp is ready, and that the user should place their hand in front of the camera in 3, 2, 1, now...
+def countdown():
+    print('The computer is ready to play... Get ready to show!!!')
+    time.sleep(2)
+    for i in range(3,0,-1):
+        print('Ready in {}'.format(i))
+        time.sleep(1)
+    print('SHOW!!!')
 
-    def lookForSearchBar(self, xpath: str = '//input[@id="filters-location-mobile"]'):
-        try:
-            time.sleep(1)
-            search_bar = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.XPATH, xpath)))
-            search_bar.click()
-            return search_bar
-        except TimeoutException:
-            print('No search bar found')
-            return None
-
-    def sendKeysToSearchBar(self, text):
-        search_bar = self.lookForSearchBar()
-        if search_bar:
-            search_bar.send_keys(text)
-            search_bar.send_keys(Keys.ENTER)
-            time.sleep(3)
+# Acquire hand gesture.
+def getSelection(cap, model, showArr, data):
+    for i in range(0,30): 
+        ret, frame = cap.read()
+        resized_frame = cv2.resize(frame, (224, 224), interpolation = cv2.INTER_AREA)
+        image_np = np.array(resized_frame)
+        normalized_image = (image_np.astype(np.float32) / 127.0) - 1 # Normalize the image
+        data[0] = normalized_image
+        prediction = model.predict(data)
+        if prediction[0][0]>0.5:
+            showArr[i] = 1
+        elif prediction[0][1]>0.5:
+            showArr[i] = 2
+        elif prediction[0][2]>0.5:
+            showArr[i] = 3
         else:
-            raise Exception('No search bar found')
+            showArr[i] = 4
+    # Record the most popular selection from the list from 30 samples.
+    showArrAvg = int(math.ceil(sum(showArr) / len(showArr))) # This records the mean (rounded), however this is not correct for the discrete variables. It should be mode, but I havent spent time dealing with the inevitable errors.
+    if showArrAvg == 1:
+        humanSelection = 'Rock'
+    elif showArrAvg == 2:
+        humanSelection = 'Paper'
+    elif showArrAvg == 3:
+        humanSelection = 'Scissors'
+    else:
+        humanSelection = 'nothing?! You didnt show your hand clearly enough!! Cheeky!'
+    return showArrAvg, humanSelection
 
-    def findPages(self):
-        # Look for <div data-testid='pagination'>, and the text (isdigit) in the <a> of the second to last <li> is the last page number needed. Put into lastPage.
-        pages = bot.driver.find_elements(By.XPATH, "//div[@data-testid='pagination']//*[starts-with(@aria-label, 'Page ')]")
-        lastPage = int(pages[-1].text)
-        return lastPage
+# Test to find the winner of the round. -> List of tuples
+def test(showArrAvg, tempComputerSelection):
+    if (showArrAvg == 1 and tempComputerSelection == 2):
+        winner = 2
+    elif (showArrAvg == 1 and tempComputerSelection == 3):
+        winner = 1
+    elif (showArrAvg == 2 and tempComputerSelection == 1):
+        winner = 1
+    elif (showArrAvg == 2 and tempComputerSelection == 3):
+        winner = 2
+    elif (showArrAvg == 3 and tempComputerSelection == 1):
+        winner = 2
+    elif (showArrAvg == 3 and tempComputerSelection == 2):
+        winner = 1
+    else:
+        winner = 3
+    return winner
 
-    def extractPageData(self):
-        propertyList = []
-        properties = self.driver.find_elements(By.XPATH, "//div[starts-with(@data-testid, 'search-result_listing_')]")
-        for property in properties:
-            propertyList.append(property.text.splitlines())
-
-#https://www.zoopla.co.uk/for-sale/property/cambridgeshire/cambridge/?q=Cambridge&results_sort=newest_listings&search_source=home&pn=3
-
-#//*[@id="__next"]/div[3]/div[2]/main/div[2]/div[3]/ul/li[8]/a
-#//*[@id="__next"]/div[3]/div[2]/main/div[2]/div[3]/ul/li[9]/a
-
-
-
-    def navThroughPages(self):
-        lastPage = bot.findPages()
-        for page in range(2,lastPage+1):
-            # Find and select the page to be scraped.
-            xpath = f'//div[@data-testid="pagination"]//*[@aria-label, "Page {page}"]'
-            test1 = self.driver.find_element(By.XPATH, xpath)
-            # For each property, locate desired data and append data into JSON format { Key: Value[0], Value[1] Value[x] }.
-            extractPageData()
-            
-
-
-# If you are running the script directly, run, otherwise ignore (if importing it).
-if __name__ == '__main__':
+# State the winner of the round and determine if there is a game winner. Inform human.
+def winnerIs(computerSelection, humanSelection, playerScore, compScore, gameOn, winner):
+    # Determine who has won the round.
+    print('The computer chose {}'.format(computerSelection))
+    print('You chose {}'.format(humanSelection))
     
-    # Initiate dict and obj
-    propertyDetails = {"Type": [], "Guide Price": [], "Bedrooms": [], "Bathrooms": [], "Receptions": []}
+    # State whom has won the round and let the human determine when the game continues with a key press.
+    if winner == 1:
+        print('Congratulation! You won!')
+        input('Press any key to continue!')
+        playerScore = playerScore + 1
+    elif winner == 2:
+        print('Unlucky, the computer beat your ass to the ground... haha.')
+        input('Press any key to continue!')
+        compScore = compScore + 1
+    else:
+        print("It's a draw!!!")
+        input('Press any key to continue!')
     
-    # Navigate to first page of list.
-    bot = Scraper()
-    bot.acceptCookies()
-    bot.sendKeysToSearchBar('Cambridge')
-    bot.navThroughPages()
+    # If human wins, state won, and ask to play again or quit.
+    if playerScore == 2:
+        replay = input("You won the game! Would you like to play again?").lower()
+        if (replay == "y" or replay == "yes"):
+            playerScore = 0
+            compScore = 0
+        else:
+            gameOn = False
     
+    # If comp wins, state lost, and ask to play again or quit.
+    if compScore == 2:
+        replay = input("You lost the game! Would you like to play again?").lower()
+        if (replay == "y" or replay == "yes"):
+            playerScore = 0
+            compScore = 0
+        else:
+            gameOn = False
+    return gameOn, playerScore, compScore
     
-    # soup = BeautifulSoup(html, 'lxml')
-    # item = soup.find('',{'class':'issuePanelContainer'})
-    # last_item = item.find_all('div')[-1]
-
-    
-
-        # Locate desired data and append data into JSON format { Key: Value[0], Value[1] Value[x] }.
-        # Type of property ['flat', 'detached', 'semi-detached', 'terrace', 'terraced', 'maisonette', 'bungalow']
-        
-        # Guide Price
-
-        # Bedrooms
-
-        # Bathrooms
-
-        # Receptions
-
+while gameOn:
+    (tempComputerSelection, computerSelection) = initialise(playerScore, compScore)
+    countdown()
+    (showArrAvg, humanSelection) = getSelection(cap, model, showArr, data)
+    winner = test(showArrAvg, tempComputerSelection)
+    (gameOn, playerScore, compScore) = winnerIs(computerSelection, humanSelection, playerScore, compScore, gameOn, winner)
