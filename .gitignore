@@ -1,0 +1,4 @@
+# Ignore these files when pushing to git. 
+
+__pycache__/*
+*/__pycache__
